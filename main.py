@@ -27,6 +27,11 @@ def parse_args():
         help="Ollama model to use for title cleaning (default: llama3.2:3b)",
     )
     parser.add_argument(
+        "--validation-model",
+        default="mistral:7b",
+        help="Ollama model to use for result validation (default: mistral:7b). Options: mistral:7b, qwen2.5:7b, deepseek-r1:7b",
+    )
+    parser.add_argument(
         "--no-llm",
         action="store_true",
         help="Skip LLM title cleaning; use heuristic only",
@@ -41,5 +46,6 @@ if __name__ == "__main__":
         output_path=args.output,
         model=args.model,
         use_llm=not args.no_llm,
+        validation_model=args.validation_model,
     )
     sys.exit(0 if success else 1)

@@ -133,13 +133,13 @@ Drop any `.pdf`, `.epub`, `.mobi`, `.txt`, or `.djvu` files into the `books/` fo
 ## Usage
 
 ```bash
-# Default run (books/ folder, llama3.2:3b, output: bookshelf.xlsx)
+# Default run (books/ folder, llama3.2:3b cleaner, mistral:7b validator)
 python main.py
 
-# Custom folder and model
-python main.py --books-dir /path/to/library --model qwen2.5-coder:7b
+# Custom models
+python main.py --model qwen2.5:7b --validation-model deepseek-r1:7b
 
-# Skip LLM, use heuristic title parsing only
+# Skip LLM, use heuristic title parsing only (no validation)
 python main.py --no-llm
 
 # Custom output path
@@ -153,7 +153,57 @@ python main.py --output my_catalog.xlsx
 | `--books-dir` | `books` | Path to folder with book files |
 | `--output` | `bookshelf.xlsx` | Output Excel file name |
 | `--model` | `llama3.2:3b` | Ollama model for title cleaning |
-| `--no-llm` | off | Use heuristic only (no Ollama needed) |
+| `--validation-model` | `mistral:7b` | Ollama model for result validation (see table below) |
+| `--no-llm` | off | Use heuristic only (no LLM, no validation) |
+
+### Available Models for Validation
+
+Use `--validation-model` with any of these larger, more accurate models:
+
+| Model | Size | Best For | Speed |
+|-------|------|----------|-------|
+| `mistral:7b` | 4.4 GB | **Recommended** - Best balance | Medium |
+| `qwen2.5:7b` | 4.7 GB | Good accuracy, slightly slower | Medium-Slow |
+| `deepseek-r1:7b` | 4.7 GB | Best accuracy, slowest | Slow |
+| `llava:latest` | 4.7 GB | Uses vision (not recommended for text) | Medium |
+
+Example with different validator:
+```bash
+python main.py --validation-model qwen2.5:7b
+```
+
+---
+
+## How It Works: AI-Powered Validation
+
+### The Problem
+Google Books doesn't always return the exact book you need:
+- "Operating System Concepts" → finds "Operating System Concepts, 10e **Abridged** Print Companion" (wrong edition)
+- "Data Structures in C++" → finds related but different book (no ISBN data)
+
+### The Solution
+After Google Books returns a result, a **larger AI model** validates if it actually matches your original filename:
+
+```
+File: Abraham-Silberschatz-Operating-System-Concepts-10th-2018.pdf
+  ↓
+Cleaned title: "Operating System Concepts"
+  ↓
+Google Books: "Operating System Concepts, 10e Abridged Print Companion"
+  ↓
+AI Validator: "NO 30" → Only 30% confidence match
+  ↓
+Result: ✗ REJECTED (too low confidence)
+```
+
+The validator uses one of the larger, more capable models to understand context and similarity, unlike simple string matching.
+
+### Available Validators
+Choose based on your accuracy needs vs. speed:
+
+- `mistral:7b` (default) - Fast, very accurate, **recommended**
+- `qwen2.5:7b` - Slightly slower, excellent accuracy
+- `deepseek-r1:7b` - Slowest, best reasoning and accuracy
 
 ---
 
@@ -203,6 +253,10 @@ Rows with failures are highlighted in red. Every other row alternates for readab
 
 ## Recent Fixes & Improvements
 
+- **v1.4**: Added AI-powered result validation to catch incorrect book matches
+  - Uses larger models (mistral:7b, qwen2.5:7b, deepseek-r1:7b) for verification
+  - Confidence threshold: 70% - rejects low-confidence matches
+  - Solves issues with wrong editions being returned
 - **v1.3**: Added detailed API fetch information (book names, ISBN numbers, fetch count)
 - **v1.2**: Removed verbose debug output, cleaner terminal display
 - **v1.1**: Fixed ISBN key names (`isbn_10`, `isbn_13`) not being saved to Excel

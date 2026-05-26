@@ -5,25 +5,27 @@ Steps:
   1. Scan books directory  (scanner.py)
   2. Clean filename → readable title  (title_cleaner.py)
   3. Validate title via Google Books  (books_api.py)
-  4. Fetch ISBN-10 and ISBN-13  (books_api.py)
-  5. Write results to Excel  (excel_writer.py)
+  4. AI-validate result matches original filename (title_cleaner.py)
+  5. Fetch ISBN-10 and ISBN-13  (books_api.py)
+  6. Write results to Excel  (excel_writer.py)
 """
 
 import time
 from typing import List, Dict
 
 from src.scanner import scan_books_dir
-from src.title_cleaner import build_cleaner
-from src.books_api import search_title, fetch_isbn, get_api_call_count
+from src.title_cleaner import build_cleaner, build_validator
+from src.books_api import search_candidates, fetch_isbn, get_api_call_count
 from src.excel_writer import write_excel
 
 
-def _process_record(rec: dict, clean_fn) -> dict:
+def _process_record(rec: dict, clean_fn, validate_fn) -> dict:
     """
     Enrich a single file record with resolved name and ISBN data.
     Returns a flat dict matching Excel columns.
     """
     stem = rec["stem"]
+    raw_filename = rec["raw_filename"]
     file_type = rec["file_type"]
 
     # Step 1: clean filename -> candidate title
@@ -31,33 +33,72 @@ def _process_record(rec: dict, clean_fn) -> dict:
 
     if fail_reason:
         return {
-            "name": rec["raw_filename"],
+            "name": raw_filename,
             "file_type": file_type,
             "isbn_10": "",
             "isbn_13": "",
             "reason_for_failure": fail_reason,
         }
 
-    # Step 2: verify + get canonical title from Google Books
-    canonical_title, _, found = search_title(candidate_title)
-    time.sleep(1.0)  # rate-limit between search_title calls
-    
-    if not canonical_title:
+    # Step 2: get multiple candidates from Google Books
+    candidates = search_candidates(candidate_title, max_results=5)
+    time.sleep(1.0)  # rate-limit between search calls
+
+    if not candidates:
         return {
-            "name": candidate_title or rec["raw_filename"],
+            "real_name": raw_filename,
+            "status": "Failed",
+            "name": candidate_title or raw_filename,
+            "author": "",
+            "description": "",
             "file_type": file_type,
             "isbn_10": "",
             "isbn_13": "",
             "reason_for_failure": f"Google Books: no results for '{candidate_title}'",
         }
 
-    # Step 3: fetch ISBNs
-    time.sleep(1.0)  # rate-limit before ISBN search
-    isbns = fetch_isbn(canonical_title)
-    time.sleep(1.0)  # gentle rate-limit after ISBN search
+    # Step 3: ask validator to score each candidate and pick the best
+    best = None
+    best_conf = -1
+    for idx, cand in enumerate(candidates):
+        # Build a compact text representation for validation
+        google_text = f"Title: {cand.get('title','')}\nAuthors: {cand.get('authors','')}\nDescription: {cand.get('description','')[:300]}"
+        is_match, confidence = validate_fn(raw_filename, google_text)
+        # Print a concise per-candidate summary
+        print(f"         Candidate {idx+1}/{len(candidates)}: {cand.get('title','')[:60]} → {confidence}%")
+        if confidence > best_conf:
+            best_conf = confidence
+            best = (cand, is_match, confidence)
+
+    # If the best candidate is not confident enough, mark as failed
+    if best is None or best_conf < 70:
+        confidence_str = f"{best_conf}%" if best_conf >= 0 else "unknown"
+        chosen_title = best[0].get('title') if best else (candidate_title or raw_filename)
+        return {
+            "real_name": raw_filename,
+            "status": "Failed",
+            "name": chosen_title,
+            "author": best[0].get('authors','') if best else "",
+            "description": best[0].get('description','') if best else "",
+            "file_type": file_type,
+            "isbn_10": "",
+            "isbn_13": "",
+            "reason_for_failure": f"Result validation failed (confidence: {confidence_str}) - likely different book",
+        }
+
+    # Use the selected candidate
+    selected, _, conf = best
+    # Step 4: fetch ISBNs (extract directly from the selected item)
+    time.sleep(1.0)  # rate-limit before ISBN extraction
+    isbns = fetch_isbn(selected)
+    time.sleep(0.5)
 
     return {
-        "name": canonical_title,
+        "real_name": raw_filename,
+        "status": "Found",
+        "name": selected.get("title") or candidate_title,
+        "author": selected.get("authors", ""),
+        "description": selected.get("description", ""),
         "file_type": file_type,
         "isbn_10": isbns.get("isbn_10", ""),
         "isbn_13": isbns.get("isbn_13", ""),
@@ -70,6 +111,7 @@ def run_pipeline(
     output_path: str = "bookshelf.xlsx",
     model: str = "llama3.2:3b",
     use_llm: bool = True,
+    validation_model: str = "mistral:7b",
 ) -> bool:
     print(f"\n{'='*60}")
     print("  📚 BookShelf Cataloger")
@@ -77,6 +119,7 @@ def run_pipeline(
     print(f"  Directory  : {books_dir}")
     print(f"  Output     : {output_path}")
     print(f"  Mode       : {model if use_llm else 'Heuristic Only'}")
+    print(f"  Validator  : {validation_model}")
     print(f"{'='*60}\n")
 
     # Scan
@@ -93,14 +136,15 @@ def run_pipeline(
     print(f"  ✓ Found {len(files)} book(s)\n")
     print(f"{'─'*60}\n")
 
-    # Build cleaner once
+    # Build cleaner and validator
     clean_fn = build_cleaner(model=model, use_llm=use_llm)
+    validate_fn = build_validator(model=validation_model)
 
     # Process each file
     results: List[Dict] = []
     for i, rec in enumerate(files, 1):
         print(f"  [{i:02d}/{len(files):02d}] {rec['raw_filename']:<40} ", end="", flush=True)
-        enriched = _process_record(rec, clean_fn)
+        enriched = _process_record(rec, clean_fn, validate_fn)
         status = "✓" if not enriched["reason_for_failure"] else "✗"
         name_display = enriched["name"][:40] if enriched["name"] else "Unknown"
         print(f"{status}")

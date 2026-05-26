@@ -1,7 +1,7 @@
 """
 excel_writer.py — Creates / updates the bookshelf Excel catalog.
 
-Columns: name | file_type | isbn_10 | isbn_13 | reason_for_failure
+Columns: real_name | status | name | author | description | file_type | isbn_10 | isbn_13 | reason_for_failure
 """
 
 from pathlib import Path
@@ -10,8 +10,18 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-COLUMNS = ["name", "file_type", "isbn_10", "isbn_13", "reason_for_failure"]
-COL_WIDTHS = [40, 12, 18, 18, 50]
+COLUMNS = [
+    "real_name",
+    "status",
+    "name",
+    "author",
+    "description",
+    "file_type",
+    "isbn_10",
+    "isbn_13",
+    "reason_for_failure",
+]
+COL_WIDTHS = [40, 10, 40, 30, 60, 12, 18, 18, 50]
 
 _HEADER_FILL = PatternFill("solid", start_color="1F3864")
 _FAIL_FILL   = PatternFill("solid", start_color="FFE0E0")
@@ -49,7 +59,7 @@ def _style_row(ws, row_idx: int, has_failure: bool):
 def write_excel(records: List[Dict], output_path: str):
     """
     Write `records` to `output_path`.
-    Each record: {name, file_type, isbn_10, isbn_13, reason_for_failure}
+    Each record should contain: {real_name, status, name, author, description, file_type, isbn_10, isbn_13, reason_for_failure}
     Overwrites if file exists.
     """
     wb = Workbook()
@@ -61,11 +71,15 @@ def write_excel(records: List[Dict], output_path: str):
 
     for i, rec in enumerate(records, start=2):
         has_failure = bool(rec.get("reason_for_failure", "").strip())
-        ws.cell(row=i, column=1, value=rec.get("name", ""))
-        ws.cell(row=i, column=2, value=rec.get("file_type", ""))
-        ws.cell(row=i, column=3, value=rec.get("isbn_10", ""))
-        ws.cell(row=i, column=4, value=rec.get("isbn_13", ""))
-        ws.cell(row=i, column=5, value=rec.get("reason_for_failure", ""))
+        ws.cell(row=i, column=1, value=rec.get("real_name", ""))
+        ws.cell(row=i, column=2, value=rec.get("status", ""))
+        ws.cell(row=i, column=3, value=rec.get("name", ""))
+        ws.cell(row=i, column=4, value=rec.get("author", ""))
+        ws.cell(row=i, column=5, value=rec.get("description", ""))
+        ws.cell(row=i, column=6, value=rec.get("file_type", ""))
+        ws.cell(row=i, column=7, value=rec.get("isbn_10", ""))
+        ws.cell(row=i, column=8, value=rec.get("isbn_13", ""))
+        ws.cell(row=i, column=9, value=rec.get("reason_for_failure", ""))
         _style_row(ws, i, has_failure)
 
     # Summary row

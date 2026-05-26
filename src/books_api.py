@@ -11,7 +11,7 @@ Optional API key for higher rate limits (set GOOGLE_BOOKS_API_KEY env var).
 import time
 import requests
 import os
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List, Union
 
 _BASE = "https://www.googleapis.com/books/v1/volumes"
 _API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY")
@@ -56,40 +56,75 @@ def get_api_call_count() -> int:
     return _api_call_count
 
 
-def search_title(query: str) -> Tuple[Optional[str], Optional[str], bool]:
+def search_candidates(query: str, max_results: int = 5) -> List[Dict]:
     """
-    Search Google Books for `query`.
-    Returns (canonical_title, google_volume_id, found) or (None, None, False).
+    Search Google Books for `query` and return up to `max_results` candidate items.
+    Each candidate is a dict with keys: title, id, authors (string), description (string), raw (original item).
     """
-    data = _get({"q": query, "maxResults": 1, "langRestrict": "en"})
-    
+    data = _get({"q": query, "maxResults": max_results, "langRestrict": "en"})
+
     if not data or data.get("totalItems", 0) == 0:
-        return None, None, False
+        return []
 
     items = data.get("items", [])
-    if not items:
+    candidates: List[Dict] = []
+    for item in items[:max_results]:
+        info = item.get("volumeInfo", {})
+        title = info.get("title")
+        authors = info.get("authors") or []
+        authors_str = ", ".join(authors) if isinstance(authors, (list, tuple)) else (authors or "")
+        description = info.get("description") or ""
+        candidates.append({
+            "title": title,
+            "id": item.get("id"),
+            "authors": authors_str,
+            "description": description,
+            "raw": item,
+        })
+
+    return candidates
+
+
+def search_title(query: str) -> Tuple[Optional[str], Optional[str], bool]:
+    """Backward-compatible helper: returns the first candidate (title,id,found)."""
+    candidates = search_candidates(query, max_results=1)
+    if not candidates:
         return None, None, False
-
-    item = items[0]
-    info = item.get("volumeInfo", {})
-    title = info.get("title")
-    vid = item.get("id")
-    
-    # Show info about the fetch
-    print(f"      📖 Found: '{title}'")
-    
-    return title, vid, True
+    c = candidates[0]
+    if c["title"]:
+        print(f"      📖 Found: '{c['title']}'")
+        return c["title"], c["id"], True
+    return None, None, False
 
 
-def fetch_isbn(title: str) -> Dict[str, str]:
+def fetch_isbn(item_or_title: Union[str, Dict]) -> Dict[str, str]:
     """
-    Given a title, fetch ISBN-10 and ISBN-13 from Google Books.
-    Returns {"isbn_10": "...", "isbn_13": "..."} with empty strings on miss.
+    Given either a Google Books item (dict) or a title string, return ISBN-10 and ISBN-13.
+    Returns {"isbn_10": "...", "isbn_13": "..."}.
+    If an item dict is provided, extracts identifiers directly (no extra API call).
     """
-    data = _get({"q": f'intitle:"{title}"', "maxResults": 1})
-    
     result = {"isbn_10": "", "isbn_13": ""}
-    
+
+    # If we received a dict (candidate item), extract identifiers from it
+    if isinstance(item_or_title, dict):
+        info = item_or_title.get("raw", item_or_title).get("volumeInfo", {})
+        identifiers = info.get("industryIdentifiers", [])
+        for id_entry in identifiers:
+            t = id_entry.get("type", "")
+            v = id_entry.get("identifier", "")
+            if t == "ISBN_10":
+                result["isbn_10"] = v
+            elif t == "ISBN_13":
+                result["isbn_13"] = v
+        isbn10_str = f"ISBN-10: {result['isbn_10']}" if result['isbn_10'] else "—"
+        isbn13_str = f"ISBN-13: {result['isbn_13']}" if result['isbn_13'] else "—"
+        print(f"      📚 ISBNs: {isbn10_str} | {isbn13_str}")
+        return result
+
+    # Otherwise fall back to searching by title (legacy behavior)
+    title = str(item_or_title)
+    data = _get({"q": f'intitle:"{title}"', "maxResults": 1})
+
     if not data or data.get("totalItems", 0) == 0:
         return result
 
@@ -99,19 +134,15 @@ def fetch_isbn(title: str) -> Dict[str, str]:
 
     info = items[0].get("volumeInfo", {})
     identifiers = info.get("industryIdentifiers", [])
-    
     for id_entry in identifiers:
         t = id_entry.get("type", "")
         v = id_entry.get("identifier", "")
-        
         if t == "ISBN_10":
             result["isbn_10"] = v
         elif t == "ISBN_13":
             result["isbn_13"] = v
 
-    # Show info about the fetch
     isbn10_str = f"ISBN-10: {result['isbn_10']}" if result['isbn_10'] else "—"
     isbn13_str = f"ISBN-13: {result['isbn_13']}" if result['isbn_13'] else "—"
     print(f"      📚 ISBNs: {isbn10_str} | {isbn13_str}")
-
     return result
