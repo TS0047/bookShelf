@@ -14,7 +14,7 @@ from typing import List, Dict
 
 from src.scanner import scan_books_dir
 from src.title_cleaner import build_cleaner
-from src.books_api import search_title, fetch_isbn
+from src.books_api import search_title, fetch_isbn, get_api_call_count
 from src.excel_writer import write_excel
 
 
@@ -39,7 +39,7 @@ def _process_record(rec: dict, clean_fn) -> dict:
         }
 
     # Step 2: verify + get canonical title from Google Books
-    canonical_title, _ = search_title(candidate_title)
+    canonical_title, _, found = search_title(candidate_title)
     time.sleep(1.0)  # rate-limit between search_title calls
     
     if not canonical_title:
@@ -71,26 +71,27 @@ def run_pipeline(
     model: str = "llama3.2:3b",
     use_llm: bool = True,
 ) -> bool:
-    print(f"\n{'='*55}")
-    print("  BookShelf Agent")
-    print(f"{'='*55}")
-    print(f"  Books dir : {books_dir}")
-    print(f"  Output    : {output_path}")
-    print(f"  LLM model : {model if use_llm else 'heuristic only'}")
-    print(f"{'='*55}\n")
+    print(f"\n{'='*60}")
+    print("  📚 BookShelf Cataloger")
+    print(f"{'='*60}")
+    print(f"  Directory  : {books_dir}")
+    print(f"  Output     : {output_path}")
+    print(f"  Mode       : {model if use_llm else 'Heuristic Only'}")
+    print(f"{'='*60}\n")
 
     # Scan
     try:
         files = scan_books_dir(books_dir)
     except FileNotFoundError as e:
-        print(f"[ERROR] {e}")
+        print(f"  ✗ Error: {e}\n")
         return False
 
     if not files:
-        print("[WARN] No supported book files found.")
+        print("  ⚠️  No supported book files found.\n")
         return False
 
-    print(f"[SCAN] Found {len(files)} file(s).\n")
+    print(f"  ✓ Found {len(files)} book(s)\n")
+    print(f"{'─'*60}\n")
 
     # Build cleaner once
     clean_fn = build_cleaner(model=model, use_llm=use_llm)
@@ -98,19 +99,22 @@ def run_pipeline(
     # Process each file
     results: List[Dict] = []
     for i, rec in enumerate(files, 1):
-        print(f"[{i:02d}/{len(files):02d}] {rec['raw_filename']} ...", end=" ", flush=True)
+        print(f"  [{i:02d}/{len(files):02d}] {rec['raw_filename']:<40} ", end="", flush=True)
         enriched = _process_record(rec, clean_fn)
         status = "✓" if not enriched["reason_for_failure"] else "✗"
-        name_display = enriched["name"][:45]
-        print(f"{status}  →  {name_display}")
+        name_display = enriched["name"][:40] if enriched["name"] else "Unknown"
+        print(f"{status}")
         if enriched["reason_for_failure"]:
-            print(f"         Reason: {enriched['reason_for_failure']}")
+            print(f"         → {enriched['reason_for_failure']}")
         results.append(enriched)
 
     # Write Excel
-    print()
+    print(f"\n{'─'*60}\n")
     write_excel(results, output_path)
 
     ok = sum(1 for r in results if not r["reason_for_failure"])
-    print(f"\nDone. {ok}/{len(results)} books resolved successfully.\n")
+    api_calls = get_api_call_count()
+    print(f"\n  ✓ Complete: {ok}/{len(results)} books cataloged")
+    print(f"  ✓ API Calls: {api_calls} fetches to Google Books")
+    print(f"  ✓ Saved to: {output_path}\n")
     return True

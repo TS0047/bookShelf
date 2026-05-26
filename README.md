@@ -16,6 +16,54 @@ An AI-powered local agent that scans your book folder, resolves file names into 
 
 ---
 
+## Sample Output
+
+```
+============================================================
+  📚 BookShelf Cataloger
+============================================================
+  Directory  : books
+  Output     : bookshelf.xlsx
+  Mode       : llama3.2:3b
+============================================================
+
+  ✓ Found 4 book(s)
+
+──────────────────────────────────────────────────────────
+
+  [01/04] harrypotter.txt                          ✓
+      📖 Found: 'Harry Potter and the Philosopher\'s Stone'
+      📚 ISBNs: ISBN-10: 0747532699 | ISBN-13: 978-0747532690
+
+  [02/04] little-red-riding-hood.txt               ✓
+      📖 Found: 'Little Red Riding Hood'
+      📚 ISBNs: ISBN-10: — | ISBN-13: 978-0486401195
+
+  [03/04] mobyDick.txt                             ✓
+      📖 Found: 'Moby-Dick; or, The Whale'
+      📚 ISBNs: ISBN-10: 0486432513 | ISBN-13: 978-0486432519
+
+  [04/04] war-of-the-worlds.txt                    ✓
+      📖 Found: 'The War of the Worlds'
+      📚 ISBNs: ISBN-10: 0486402753 | ISBN-13: 978-0486402758
+
+──────────────────────────────────────────────────────────
+
+  ✓ Complete: 4/4 books cataloged
+  ✓ API Calls: 8 fetches to Google Books
+  ✓ Saved to: bookshelf.xlsx
+
+```
+
+The output shows:
+- **File scanning progress** - Which file is being processed
+- **Google Books result** - The canonical title found (📖)
+- **ISBN details** - Both ISBN-10 and ISBN-13 (📚), or dashes if not available
+- **API statistics** - Total number of Google Books API calls made
+- **Completion summary** - Success count and output file location
+
+---
+
 ## Project Structure
 
 ```
@@ -127,11 +175,11 @@ Rows with failures are highlighted in red. Every other row alternates for readab
 
 ### HTTP 429 "Too Many Requests" from Google Books API
 
-**Symptoms**: All API calls fail with status code 429
+**Symptoms**: Books fail to resolve with "no results" messages
 
 **Causes**:
 - Using free tier without API key (limited to ~1,000 requests/day)
-- Rapid consecutive requests without proper rate limiting
+- Too many requests in a short time
 
 **Solutions**:
 1. **Add an API key** (recommended)
@@ -143,19 +191,20 @@ Rows with failures are highlighted in red. Every other row alternates for readab
    python main.py --no-llm
    ```
 
-3. **Wait and retry** - The app automatically retries with exponential backoff (5s, 10s, 20s, 40s, 80s)
+3. **Wait and retry** - The app automatically retries with exponential backoff
 
 ### ISBN numbers not appearing in Excel
 
-**Check**: Run with debug output enabled (default)
-- Look for `[FETCH_ISBN] Full identifiers: [...]` in terminal
-- If identifiers are empty, the book wasn't found in Google Books
-- If identifiers exist but Excel is blank, this is a known bug (fixed in latest version)
+**Check**: Look at the Excel output
+- If ISBN columns are empty, the books weren't found in Google Books
+- Some older or obscure books may not have ISBN data available
 
 ---
 
-## Recent Fixes
+## Recent Fixes & Improvements
 
+- **v1.3**: Added detailed API fetch information (book names, ISBN numbers, fetch count)
+- **v1.2**: Removed verbose debug output, cleaner terminal display
 - **v1.1**: Fixed ISBN key names (`isbn_10`, `isbn_13`) not being saved to Excel
 - **v1.1**: Improved Google Books API retry logic with exponential backoff
 - **v1.1**: Added optional API key support via `GOOGLE_BOOKS_API_KEY` env variable
