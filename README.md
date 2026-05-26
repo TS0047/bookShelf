@@ -50,10 +50,33 @@ ollama pull llama3.2:3b        # lightweight, fast
 ollama pull qwen2.5-coder:7b   # better reasoning
 ```
 
-> **No API key needed.** Google Books basic search is free (1 000 req/day).  
-> For higher limits, add `&key=YOUR_KEY` in `src/books_api.py`.
+### 3. (Optional) Google Books API Key
 
-### 3. Add your books
+**No API key is required**, but it's recommended for production use:
+- **Without API key**: ~1,000 requests/day (free tier, may hit rate limits)
+- **With API key**: 1,000,000 requests/day (requires Google Cloud account)
+
+To enable API key authentication:
+
+1. Get an API key from [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project
+   - Enable Google Books API
+   - Create an API Key credential
+2. Set the environment variable:
+
+```powershell
+# Windows PowerShell
+$env:GOOGLE_BOOKS_API_KEY = "your_api_key_here"
+python main.py
+```
+
+```bash
+# Linux/Mac
+export GOOGLE_BOOKS_API_KEY="your_api_key_here"
+python main.py
+```
+
+### 4. Add your books
 
 Drop any `.pdf`, `.epub`, `.mobi`, `.txt`, or `.djvu` files into the `books/` folder.
 
@@ -97,6 +120,45 @@ python main.py --output my_catalog.xlsx
 | **Reason For Failure** | Why the book couldn't be resolved (blank = success) |
 
 Rows with failures are highlighted in red. Every other row alternates for readability.
+
+---
+
+## Troubleshooting
+
+### HTTP 429 "Too Many Requests" from Google Books API
+
+**Symptoms**: All API calls fail with status code 429
+
+**Causes**:
+- Using free tier without API key (limited to ~1,000 requests/day)
+- Rapid consecutive requests without proper rate limiting
+
+**Solutions**:
+1. **Add an API key** (recommended)
+   - Follow the steps in "Google Books API Key" section above
+   - This increases limit to 1,000,000 requests/day
+
+2. **Use `--no-llm` flag** to reduce API calls
+   ```bash
+   python main.py --no-llm
+   ```
+
+3. **Wait and retry** - The app automatically retries with exponential backoff (5s, 10s, 20s, 40s, 80s)
+
+### ISBN numbers not appearing in Excel
+
+**Check**: Run with debug output enabled (default)
+- Look for `[FETCH_ISBN] Full identifiers: [...]` in terminal
+- If identifiers are empty, the book wasn't found in Google Books
+- If identifiers exist but Excel is blank, this is a known bug (fixed in latest version)
+
+---
+
+## Recent Fixes
+
+- **v1.1**: Fixed ISBN key names (`isbn_10`, `isbn_13`) not being saved to Excel
+- **v1.1**: Improved Google Books API retry logic with exponential backoff
+- **v1.1**: Added optional API key support via `GOOGLE_BOOKS_API_KEY` env variable
 
 ---
 

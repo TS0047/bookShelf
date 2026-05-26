@@ -40,6 +40,8 @@ def _process_record(rec: dict, clean_fn) -> dict:
 
     # Step 2: verify + get canonical title from Google Books
     canonical_title, _ = search_title(candidate_title)
+    time.sleep(1.0)  # rate-limit between search_title calls
+    
     if not canonical_title:
         return {
             "name": candidate_title or rec["raw_filename"],
@@ -50,8 +52,9 @@ def _process_record(rec: dict, clean_fn) -> dict:
         }
 
     # Step 3: fetch ISBNs
+    time.sleep(1.0)  # rate-limit before ISBN search
     isbns = fetch_isbn(canonical_title)
-    time.sleep(0.3)  # gentle rate-limit
+    time.sleep(1.0)  # gentle rate-limit after ISBN search
 
     return {
         "name": canonical_title,
