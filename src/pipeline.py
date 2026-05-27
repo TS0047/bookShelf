@@ -8,6 +8,10 @@ Steps:
   4. AI-validate result matches original filename (title_cleaner.py)
   5. Fetch ISBN-10 and ISBN-13  (books_api.py)
   6. Write results to Excel  (excel_writer.py)
+
+Features:
+  - Skip files already processed (resume support)
+  - Incremental saves after each book (crash-proof)
 """
 
 import time
@@ -16,7 +20,7 @@ from typing import List, Dict
 from src.scanner import scan_books_dir
 from src.title_cleaner import build_cleaner, build_validator
 from src.books_api import search_candidates, fetch_isbn, get_api_call_count
-from src.excel_writer import write_excel
+from src.excel_writer import load_processed_files, append_record_to_excel, write_excel
 
 
 def _process_record(rec: dict, clean_fn, validate_fn) -> dict:
@@ -133,32 +137,43 @@ def run_pipeline(
         print("  ⚠️  No supported book files found.\n")
         return False
 
-    print(f"  ✓ Found {len(files)} book(s)\n")
-    print(f"{'─'*60}\n")
+    # Load already processed files to skip them
+    processed = load_processed_files(output_path)
+    unprocessed = [f for f in files if f['raw_filename'] not in processed]
+    
+    print(f"  ✓ Found {len(files)} book(s)")
+    if processed:
+        print(f"  ⏭️  {len(processed)} already processed, {len(unprocessed)} remaining")
+    print(f"\n{'─'*60}\n")
+
+    if not unprocessed:
+        print("  ✓ All books already processed!\n")
+        return True
 
     # Build cleaner and validator
     clean_fn = build_cleaner(model=model, use_llm=use_llm)
     validate_fn = build_validator(model=validation_model)
 
-    # Process each file
-    results: List[Dict] = []
-    for i, rec in enumerate(files, 1):
-        print(f"  [{i:02d}/{len(files):02d}] {rec['raw_filename']:<40} ", end="", flush=True)
+    # Process each file and save incrementally
+    processed_count = 0
+    for i, rec in enumerate(unprocessed, 1):
+        print(f"  [{i:02d}/{len(unprocessed):02d}] {rec['raw_filename']:<40} ", end="", flush=True)
         enriched = _process_record(rec, clean_fn, validate_fn)
         status = "✓" if not enriched["reason_for_failure"] else "✗"
-        name_display = enriched["name"][:40] if enriched["name"] else "Unknown"
         print(f"{status}")
         if enriched["reason_for_failure"]:
             print(f"         → {enriched['reason_for_failure']}")
-        results.append(enriched)
+        
+        # Save immediately after each record
+        append_record_to_excel(enriched, output_path)
+        processed_count += 1
 
-    # Write Excel
+    # Print summary
     print(f"\n{'─'*60}\n")
-    write_excel(results, output_path)
-
-    ok = sum(1 for r in results if not r["reason_for_failure"])
     api_calls = get_api_call_count()
-    print(f"\n  ✓ Complete: {ok}/{len(results)} books cataloged")
+    total_in_catalog = len(processed) + processed_count
+    print(f"  ✓ Session: Processed {processed_count} new books")
+    print(f"  ✓ Total in catalog: {total_in_catalog} books")
     print(f"  ✓ API Calls: {api_calls} fetches to Google Books")
     print(f"  ✓ Saved to: {output_path}\n")
     return True
