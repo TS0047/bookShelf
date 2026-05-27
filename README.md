@@ -100,7 +100,7 @@ ollama pull qwen2.5-coder:7b   # better reasoning
 
 ### 3. (Optional) Google Books API Key
 
-**No API key is required**, but it's recommended for production use:
+**No API key is required**, but it's recommended for production use, especially for large batches:
 - **Without API key**: ~1,000 requests/day (free tier, may hit rate limits)
 - **With API key**: 1,000,000 requests/day (requires Google Cloud account)
 
@@ -110,7 +110,17 @@ To enable API key authentication:
    - Create a new project
    - Enable Google Books API
    - Create an API Key credential
-2. Set the environment variable:
+
+2. **Create a `.env` file** in the project root and add your key:
+
+```env
+# .env file (DO NOT commit to git)
+GOOGLE_BOOKS_API_KEY=your_api_key_here
+```
+
+The `.env` file is automatically excluded from git (see `.gitignore`).
+
+**Alternative**: Set environment variable directly:
 
 ```powershell
 # Windows PowerShell
@@ -155,6 +165,39 @@ python main.py --output my_catalog.xlsx
 | `--model` | `llama3.2:3b` | Ollama model for title cleaning |
 | `--validation-model` | `mistral:7b` | Ollama model for result validation (see table below) |
 | `--no-llm` | off | Use heuristic only (no LLM, no validation) |
+
+---
+
+## Resumable Processing (Large Batches)
+
+For processing **large numbers of files** (100+), this tool automatically:
+
+1. **Skips already-processed files** — Reads the Excel file and avoids re-querying files already cataloged
+2. **Saves incrementally** — After each book lookup, the result is immediately saved to Excel
+3. **Allows resuming** — If a session stops (API limits, power loss, Ctrl+C), just run again
+
+### Example: Processing 21,000 Files
+
+With the free tier (1000 requests/day) and resumable processing:
+
+```powershell
+# Session 1: Process first ~950 books
+python main.py --validation-model deepseek-r1:7b
+
+# [Next day] Session 2: Skips those 950, continues with next ~950
+python main.py --validation-model deepseek-r1:7b
+
+# [Repeat] Sessions 3-22: Each day processes another batch
+# No duplicates, no API waste, no data loss!
+```
+
+**Key features:**
+- ✅ Files in Excel are never re-processed
+- ✅ Each record is saved immediately (crash-proof)
+- ✅ Progress is preserved across sessions
+- ✅ Safe to stop and resume anytime
+
+---
 
 ### Available Models for Validation
 
