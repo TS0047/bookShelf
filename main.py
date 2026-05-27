@@ -6,7 +6,11 @@ fetches ISBN numbers, and writes results to an Excel file.
 
 import argparse
 import sys
+from dotenv import load_dotenv
 from src.pipeline import run_pipeline
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 def parse_args():
