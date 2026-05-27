@@ -17,6 +17,12 @@ _BASE = "https://www.googleapis.com/books/v1/volumes"
 _API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY")
 _TIMEOUT = 8
 
+# Debug: Show API key status
+if _API_KEY:
+    print(f"✓ Google Books API key loaded (first 10 chars: {_API_KEY[:10]}...)")
+else:
+    print("⚠️  No Google Books API key found. Rate limits will be lower.")
+
 # Tracking API calls
 _api_call_count = 0
 
